@@ -37,7 +37,21 @@ def tokenize(text_value):
     return re.findall(r"[a-zA-Z]+", text_value.lower())
 
 
-def summarize_notes(notes, max_sentences=4):
+def _compress_sentence(sentence, max_terms=6):
+    tokens = [token for token in tokenize(sentence) if token not in STOP_WORDS]
+    if not tokens:
+        return ""
+
+    compressed_tokens = []
+    for token in tokens:
+        if token not in compressed_tokens and len(token) > 2:
+            compressed_tokens.append(token)
+        if len(compressed_tokens) >= max_terms:
+            break
+    return " ".join(compressed_tokens)
+
+
+def summarize_notes(notes, max_sentences=2):
     sentences = split_into_sentences(notes)
     if not sentences:
         return "No notes were provided."
@@ -57,7 +71,20 @@ def summarize_notes(notes, max_sentences=4):
     scored_sentences.sort(key=lambda item: item[0], reverse=True)
     top_sentences = [sentence for _, sentence in scored_sentences[:max_sentences]]
     top_sentences.sort(key=sentences.index)
-    return " ".join(top_sentences)
+
+    compressed_phrases = [
+        phrase for phrase in (_compress_sentence(sentence) for sentence in top_sentences) if phrase
+    ]
+
+    if not compressed_phrases:
+        return "The notes describe several key ideas."
+
+    if len(compressed_phrases) == 1:
+        return f"The notes describe {compressed_phrases[0]}."
+    if len(compressed_phrases) == 2:
+        return f"The notes describe {compressed_phrases[0]} and {compressed_phrases[1]}."
+
+    return f"The notes describe {', '.join(compressed_phrases[:-1])}, and {compressed_phrases[-1]}."
 
 
 def answer_question(question, notes):
@@ -88,16 +115,21 @@ def answer_question(question, notes):
     return best_sentence
 
 
-notes = get_notes_input()
-print("\nSummary of the notes:")
-print(summarize_notes(notes))
-print("\nAsk questions about the notes. Type 'exit' to stop.\n")
+def main():
+    notes = get_notes_input()
+    print("\nSummary of the notes:")
+    print(summarize_notes(notes))
+    print("\nAsk questions about the notes. Type 'exit' to stop.\n")
 
-while True:
-    user_question = input("Question: ").strip()
-    if not user_question or user_question.lower() in {"exit", "quit"}:
-        break
-    print(answer_question(user_question, notes))
-    print()
+    while True:
+        user_question = input("Question: ").strip()
+        if not user_question or user_question.lower() in {"exit", "quit"}:
+            break
+        print(answer_question(user_question, notes))
+        print()
+
+
+if __name__ == "__main__":
+    main()
 
 
