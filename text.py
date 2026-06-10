@@ -59,6 +59,19 @@ def tokenize(text_value):
     return re.findall(r"[a-zA-Z]+", text_value.lower())
 
 
+def normalize_token(token):
+    normalized = token.lower()
+    if len(normalized) > 5 and normalized.endswith("ing"):
+        normalized = normalized[:-3]
+    elif len(normalized) > 4 and normalized.endswith("ed"):
+        normalized = normalized[:-2]
+    elif len(normalized) > 4 and normalized.endswith("es") and not normalized.endswith(("ses", "xes", "zes")):
+        normalized = normalized[:-2]
+    elif len(normalized) > 3 and normalized.endswith("s") and not normalized.endswith(("ss", "us", "is")):
+        normalized = normalized[:-1]
+    return normalized
+
+
 def _compress_sentence(sentence, max_terms=6):
     tokens = [token for token in tokenize(sentence) if token not in STOP_WORDS]
     if not tokens:
@@ -196,7 +209,9 @@ def answer_question(question, notes):
 
     sentences = split_into_sentences(notes)
     question_tokens = {
-        token for token in tokenize(question) if token not in STOP_WORDS and len(token) > 2
+        normalize_token(token)
+        for token in tokenize(question)
+        if token not in STOP_WORDS and len(token) > 2
     }
 
     best_sentence = "I could not find a clear answer in the provided notes."
@@ -204,7 +219,9 @@ def answer_question(question, notes):
 
     for sentence in sentences:
         sentence_tokens = {
-            token for token in tokenize(sentence) if token not in STOP_WORDS and len(token) > 2
+            normalize_token(token)
+            for token in tokenize(sentence)
+            if token not in STOP_WORDS and len(token) > 2
         }
         overlap = len(question_tokens & sentence_tokens)
         if overlap > best_score:

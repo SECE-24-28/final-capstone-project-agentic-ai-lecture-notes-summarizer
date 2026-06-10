@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from text import summarize_notes
+from textPDF import answer_pdf_question, summarize_pdf_document
 
 
 def test_summarize_notes_creates_a_contextual_summary():
@@ -51,3 +52,32 @@ def test_summarize_notes_uses_llm_summary_when_available(monkeypatch):
     summary = summarize_notes(notes, use_llm=True)
 
     assert "polished llm summary" in summary.lower()
+
+
+def test_summarize_pdf_document_uses_extracted_text(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "lecture.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+
+    monkeypatch.setattr(
+        "textPDF.extract_text_from_pdf",
+        lambda path: "Artificial intelligence improves diagnostic accuracy. It also automates routine tasks.",
+    )
+
+    summary = summarize_pdf_document(pdf_path, use_llm=False)
+
+    assert "diagnostic" in summary.lower() or "routine" in summary.lower()
+    assert summary.lower().startswith("the notes")
+
+
+def test_answer_pdf_question_uses_extracted_text(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "lecture.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+
+    monkeypatch.setattr(
+        "textPDF.extract_text_from_pdf",
+        lambda path: "Artificial intelligence improves diagnostic accuracy. It also automates routine tasks.",
+    )
+
+    answer = answer_pdf_question("How does AI improve diagnostics?", pdf_path)
+
+    assert "diagnostic" in answer.lower() or "routine" in answer.lower()
