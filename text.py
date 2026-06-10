@@ -1,5 +1,27 @@
+import json
+import os
 import re
 from collections import Counter
+from pathlib import Path
+from urllib import request as urllib_request
+
+
+def _load_env_file():
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.exists():
+        return
+
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+_load_env_file()
 
 
 def get_notes_input():
@@ -51,7 +73,82 @@ def _compress_sentence(sentence, max_terms=6):
     return " ".join(compressed_tokens)
 
 
-def summarize_notes(notes, max_sentences=2):
+def _get_llm_summary(notes):
+    provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
+    if provider in {"openai", "gpt"}:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return None
+        url = "https://api.openai.com/v1/chat/completions"
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that summarizes lecture notes clearly, concisely, and in polished prose.",
+                },
+                {
+                    "role": "user",
+                    "content": f"Summarize the following lecture notes in 2 to 3 short, polished sentences:\n\n{notes}",
+                },
+            ],
+            "temperature": 0.4,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+    elif provider in {"gemini", "google", "google_gemini"}:
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return None
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": f"Summarize the following lecture notes in 2 to 3 short, polished sentences:\n\n{notes}",
+                        }
+                    ]
+                }
+            ]
+        }
+        headers = {"Content-Type": "application/json"}
+    else:
+        return None
+
+    try:
+        request = urllib_request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urllib_request.urlopen(request, timeout=20) as response:
+            body = response.read().decode("utf-8")
+            data = json.loads(body)
+    except Exception:
+        return None
+
+    if provider in {"openai", "gpt"}:
+        try:
+            return data["choices"][0]["message"]["content"].strip()
+        except (KeyError, IndexError, TypeError):
+            return None
+
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def summarize_notes(notes, max_sentences=3, use_llm=True):
+    if use_llm:
+        llm_summary = _get_llm_summary(notes)
+        if llm_summary:
+            return llm_summary
+
     sentences = split_into_sentences(notes)
     if not sentences:
         return "No notes were provided."
@@ -72,19 +169,21 @@ def summarize_notes(notes, max_sentences=2):
     top_sentences = [sentence for _, sentence in scored_sentences[:max_sentences]]
     top_sentences.sort(key=sentences.index)
 
-    compressed_phrases = [
-        phrase for phrase in (_compress_sentence(sentence) for sentence in top_sentences) if phrase
-    ]
-
-    if not compressed_phrases:
+    if not top_sentences:
         return "The notes describe several key ideas."
 
-    if len(compressed_phrases) == 1:
-        return f"The notes describe {compressed_phrases[0]}."
-    if len(compressed_phrases) == 2:
-        return f"The notes describe {compressed_phrases[0]} and {compressed_phrases[1]}."
+    first_sentence = top_sentences[0].strip().rstrip(".")
+    summary_sentences = [f"The notes explain that {first_sentence.lower()}."]
 
-    return f"The notes describe {', '.join(compressed_phrases[:-1])}, and {compressed_phrases[-1]}."
+    if len(top_sentences) > 1:
+        second_sentence = top_sentences[1].strip().rstrip(".")
+        summary_sentences.append(f"They also highlight {second_sentence.lower()}.")
+
+    if len(top_sentences) > 2:
+        third_sentence = top_sentences[2].strip().rstrip(".")
+        summary_sentences.append(f"Overall, the main takeaway is that {third_sentence.lower()}.")
+
+    return "\n".join(summary_sentences)
 
 
 def answer_question(question, notes):
