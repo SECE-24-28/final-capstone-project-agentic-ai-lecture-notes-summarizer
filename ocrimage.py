@@ -50,7 +50,7 @@ def extract_text_from_image(image_path):
 
     url = (
         "https://generativelanguage.googleapis.com/"
-        f"v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        f"v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
     )
 
     payload = {
@@ -85,7 +85,8 @@ Rules:
         url,
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         },
         method="POST"
     )

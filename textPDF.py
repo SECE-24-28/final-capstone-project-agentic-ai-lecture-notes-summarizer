@@ -59,12 +59,12 @@ def summarize_pdf_document(pdf_path: Optional[str | Path] = None, use_llm: bool 
     return summarize_notes(notes, use_llm=use_llm)
 
 
-def answer_pdf_question(question: str, pdf_path: Optional[str | Path] = None) -> str:
+def answer_pdf_question(question: str, pdf_path: Optional[str | Path] = None, use_llm: bool = True) -> str:
     path = resolve_pdf_path(pdf_path)
     notes = extract_text_from_pdf(path)
     if not notes.strip():
         return "The uploaded PDF did not contain readable text."
-    return answer_question(question, notes)
+    return answer_question(question, notes, use_llm=use_llm)
 
 
 def main() -> None:

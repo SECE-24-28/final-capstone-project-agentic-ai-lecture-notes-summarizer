@@ -1,8 +1,10 @@
 import json
 import os
 import re
+import sys
 from collections import Counter
 from pathlib import Path
+from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 
@@ -90,13 +92,15 @@ def _build_academic_summary_prompt(notes):
     return (
         "You are a careful academic study assistant. Write a concise academic summary of the lecture notes in clear, student-friendly language.\n"
         "Follow these rules:\n"
-        "- Identify the main topic in one sentence.\n"
+        "- Identify the main topic in one short sentence.\n"
         "- Explain the key ideas using your own words.\n"
         "- Mention important arguments or concepts.\n"
         "- End with a final takeaway.\n"
         "- Avoid copying large chunks of the original text.\n"
         "- Keep the response around 80-150 words.\n"
         "Format the response as:\n"
+        "Title:\n"
+        "<one short title>\n\n"
         "Main Topic:\n"
         "<one sentence>\n\n"
         "Summary:\n"
@@ -107,13 +111,21 @@ def _build_academic_summary_prompt(notes):
 
 def _get_llm_summary(notes):
     provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
-    if provider in {"openai", "gpt"}:
-        api_key = os.getenv("OPENAI_API_KEY")
+    if provider in {"openai", "gpt", "groq"}:
+        if provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            model = "llama-3.1-8b-instant"
+        else:
+            api_key = os.getenv("OPENAI_API_KEY")
+            url = "https://api.openai.com/v1/chat/completions"
+            model = "gpt-4o-mini"
+
         if not api_key:
             return None
-        url = "https://api.openai.com/v1/chat/completions"
+
         payload = {
-            "model": "gpt-4o-mini",
+            "model": model,
             "messages": [
                 {
                     "role": "system",
@@ -129,6 +141,7 @@ def _get_llm_summary(notes):
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         }
     elif provider in {"gemini", "google", "google_gemini"}:
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
@@ -145,9 +158,12 @@ def _get_llm_summary(notes):
                     ]
                 }
             ],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 220},
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2048},
         }
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
     else:
         return None
 
@@ -161,10 +177,17 @@ def _get_llm_summary(notes):
         with urllib_request.urlopen(request, timeout=20) as response:
             body = response.read().decode("utf-8")
             data = json.loads(body)
-    except Exception:
+    except urllib_error.HTTPError as e:
+        if e.code == 429:
+            print(f"\n[Warning: {provider.upper()} API rate limit or quota exceeded. Falling back to rule-based summarizer.]\n", file=sys.stderr)
+        else:
+            print(f"\n[Warning: {provider.upper()} API returned HTTP error {e.code}. Falling back to rule-based summarizer.]\n", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"\n[Warning: Failed to contact LLM provider ({e}). Falling back to rule-based summarizer.]\n", file=sys.stderr)
         return None
 
-    if provider in {"openai", "gpt"}:
+    if provider in {"openai", "gpt", "groq"}:
         try:
             return data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, TypeError):
@@ -176,15 +199,143 @@ def _get_llm_summary(notes):
         return None
 
 
-def summarize_notes(notes, max_sentences=3, use_llm=True):
-    if use_llm:
-        llm_summary = _get_llm_summary(notes)
-        if llm_summary:
-            return llm_summary
+def _get_llm_answer(question, notes):
+    provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
+    prompt = (
+        "You are an academic assistant. Answer the user's question using only the provided lecture notes. "
+        "Keep the answer concise, accurate, and student-friendly. If the answer cannot be found in the notes, say so.\n\n"
+        f"Lecture Notes:\n{notes}\n\n"
+        f"Question: {question}\n"
+        "Answer:"
+    )
 
+    if provider in {"openai", "gpt", "groq"}:
+        if provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            model = "llama-3.1-8b-instant"
+        else:
+            api_key = os.getenv("OPENAI_API_KEY")
+            url = "https://api.openai.com/v1/chat/completions"
+            model = "gpt-4o-mini"
+
+        if not api_key:
+            return None
+
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a helpful academic assistant that answers questions based on lecture notes.",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            "temperature": 0.3,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+    elif provider in {"gemini", "google", "google_gemini"}:
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return None
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt,
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1024},
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+    else:
+        return None
+
+    try:
+        request = urllib_request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urllib_request.urlopen(request, timeout=20) as response:
+            body = response.read().decode("utf-8")
+            data = json.loads(body)
+    except urllib_error.HTTPError as e:
+        if e.code == 429:
+            print(f"\n[Warning: {provider.upper()} API rate limit or quota exceeded. Falling back to rule-based Q&A.]\n", file=sys.stderr)
+        else:
+            print(f"\n[Warning: {provider.upper()} API returned HTTP error {e.code}. Falling back to rule-based Q&A.]\n", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"\n[Warning: Failed to contact LLM provider ({e}). Falling back to rule-based Q&A.]\n", file=sys.stderr)
+        return None
+
+    if provider in {"openai", "gpt", "groq"}:
+        try:
+            return data["choices"][0]["message"]["content"].strip()
+        except (KeyError, IndexError, TypeError):
+            return None
+
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def _derive_title(notes, fallback_text=""):
+    source_text = fallback_text or notes
+    sentences = split_into_sentences(source_text)
+    if not sentences:
+        sentences = split_into_sentences(notes)
+
+    if not sentences:
+        return "Lecture Notes Summary"
+
+    word_counts = Counter(
+        token for sentence in sentences for token in tokenize(sentence) if token not in STOP_WORDS and len(token) > 2
+    )
+
+    keyword_candidates = [
+        token for token, _ in word_counts.most_common(6) if token not in {"lecture", "notes", "summary", "topic"}
+    ]
+
+    if keyword_candidates:
+        main_keyword = keyword_candidates[0].capitalize()
+        if len(keyword_candidates) > 1:
+            secondary_keyword = keyword_candidates[1].capitalize()
+            if secondary_keyword.lower() not in {"and", "the", "for", "with"}:
+                return f"{main_keyword} and {secondary_keyword}"
+        return main_keyword
+
+    return "Lecture Notes Summary"
+
+
+def _build_fallback_summary(notes, max_sentences=3):
     sentences = split_into_sentences(notes)
     if not sentences:
-        return "No notes were provided."
+        return "Title: Lecture Notes Summary\n\nSummary: No notes were provided."
+
+    if len(sentences) <= 2:
+        target_sentences = 1
+    elif len(sentences) <= 4:
+        target_sentences = 2
+    else:
+        target_sentences = min(max_sentences, len(sentences))
 
     word_counts = Counter(
         token for sentence in sentences for token in tokenize(sentence) if token not in STOP_WORDS
@@ -199,24 +350,61 @@ def summarize_notes(notes, max_sentences=3, use_llm=True):
         scored_sentences.append((score, sentence))
 
     scored_sentences.sort(key=lambda item: item[0], reverse=True)
-    top_sentences = [sentence for _, sentence in scored_sentences[:max_sentences]]
+    top_sentences = [sentence for _, sentence in scored_sentences[:target_sentences]]
     top_sentences.sort(key=sentences.index)
 
     if not top_sentences:
-        return "The notes describe several key ideas."
+        return "Title: Lecture Notes Summary\n\nSummary: The notes describe several key ideas."
 
-    first_sentence = top_sentences[0].strip().rstrip(".")
-    summary_sentences = [f"The notes explain that {first_sentence.lower()}."]
+    paragraph_sentences = []
+    for index, sentence in enumerate(top_sentences):
+        cleaned_sentence = sentence.strip().rstrip(".")
+        if index == 0:
+            paragraph_sentences.append(cleaned_sentence)
+        elif index == 1:
+            paragraph_sentences.append(f"It also explains that {cleaned_sentence.lower()}.")
+        else:
+            paragraph_sentences.append(f"Overall, it shows that {cleaned_sentence.lower()}.")
 
-    if len(top_sentences) > 1:
-        second_sentence = top_sentences[1].strip().rstrip(".")
-        summary_sentences.append(f"They also highlight {second_sentence.lower()}.")
+    paragraph = " ".join(paragraph_sentences)
+    title = _derive_title(notes, paragraph)
+    return f"Title: {title}\n\nSummary: {paragraph}"
 
-    if len(top_sentences) > 2:
-        third_sentence = top_sentences[2].strip().rstrip(".")
-        summary_sentences.append(f"Overall, the main takeaway is that {third_sentence.lower()}.")
 
-    return "\n".join(summary_sentences)
+def _normalize_summary_output(notes, llm_summary):
+    if not llm_summary or not llm_summary.strip():
+        return _build_fallback_summary(notes)
+
+    # Match sections using regex on the raw unflattened response
+    pattern = r"(?i)(title|main\s+topic|summary):\s*(.*?)(?=\s*(?:title|main\s+topic|summary):|$)"
+    matches = re.findall(pattern, llm_summary, re.DOTALL)
+    
+    sections = {}
+    for key, val in matches:
+        k = key.lower().strip()
+        v = re.sub(r"\s+", " ", val).strip()
+        sections[k] = v
+
+    if "title" in sections and "summary" in sections:
+        if "main topic" in sections:
+            return f"Title: {sections['title']}\n\nMain Topic: {sections['main topic']}\n\nSummary: {sections['summary']}"
+        return f"Title: {sections['title']}\n\nSummary: {sections['summary']}"
+
+    if "main topic" in sections and "summary" in sections:
+        return f"Title: {sections['main topic']}\n\nMain Topic: {sections['main topic']}\n\nSummary: {sections['summary']}"
+
+    cleaned_summary = re.sub(r"\s+", " ", llm_summary).strip()
+    title = _derive_title(notes, cleaned_summary)
+    return f"Title: {title}\n\nSummary: {cleaned_summary}"
+
+
+def summarize_notes(notes, max_sentences=3, use_llm=True):
+    if use_llm:
+        llm_summary = _get_llm_summary(notes)
+        if llm_summary:
+            return _normalize_summary_output(notes, llm_summary)
+
+    return _build_fallback_summary(notes, max_sentences=max_sentences)
 
 
 def _extract_question_keywords(question):
@@ -237,13 +425,18 @@ def _extract_question_keywords(question):
     return [token for token in tokens if token not in generic_words and len(token) > 2]
 
 
-def answer_question(question, notes):
+def answer_question(question, notes, use_llm=True):
     if not question.strip():
         return "Please ask a question about the notes."
 
     lowered_question = question.lower()
     if "summary" in lowered_question or "summarize" in lowered_question:
-        return summarize_notes(notes)
+        return summarize_notes(notes, use_llm=use_llm)
+
+    if use_llm:
+        llm_answer = _get_llm_answer(question, notes)
+        if llm_answer:
+            return llm_answer
 
     sentences = split_into_sentences(notes)
     question_keywords = _extract_question_keywords(question)
@@ -252,20 +445,42 @@ def answer_question(question, notes):
         return "I could not find a clear answer in the provided notes."
 
     best_sentence = "I could not find a clear answer in the provided notes."
-    best_score = 0
+    best_score = -1.0
 
     for sentence in sentences:
-        sentence_tokens = {
+        sentence_lower = sentence.lower()
+        sentence_tokens = [
             normalize_token(token)
             for token in tokenize(sentence)
             if token not in STOP_WORDS and len(token) > 2
-        }
+        ]
+        
+        # Calculate overlap
         overlap = sum(1 for keyword in question_keywords if keyword in sentence_tokens)
-        if overlap > best_score:
-            best_score = overlap
+        if overlap == 0:
+            continue
+            
+        score = float(overlap)
+        
+        # 1. Boost if definition pattern matched for definition-seeking questions
+        is_definition_question = any(q_word in lowered_question for q_word in ["what", "define", "definition", "who", "explain"])
+        if is_definition_question:
+            for kw in question_keywords:
+                pattern = r"\b" + re.escape(kw) + r"\b\s+(?:is|are|was|were|refers|refers\s+to|means|defined\s+as|completely|transformed|produces|creates)\b"
+                if re.search(pattern, sentence_lower):
+                    score += 2.0
+                elif any(word in sentence_lower for word in ["is a", "refers to", "process", "defined"]):
+                    score += 0.5
+
+        # 2. Keyword density / sentence length boost
+        if sentence_tokens:
+            score += overlap / len(sentence_tokens)
+
+        if score > best_score:
+            best_score = score
             best_sentence = sentence
 
-    if best_score == 0:
+    if best_score < 0:
         return "I could not find a clear answer in the provided notes."
 
     return best_sentence
