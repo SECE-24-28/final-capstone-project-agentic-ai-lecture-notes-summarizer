@@ -219,6 +219,24 @@ def summarize_notes(notes, max_sentences=3, use_llm=True):
     return "\n".join(summary_sentences)
 
 
+def _extract_question_keywords(question):
+    generic_words = {
+        "about", "after", "all", "also", "an", "and", "any", "are", "as", "ask",
+        "asked", "be", "been", "being", "can", "could", "did", "do", "does",
+        "for", "from", "have", "has", "how", "is", "it", "its", "may", "mean",
+        "means", "mention", "mentioned", "not", "of", "or", "our", "question",
+        "questions", "should", "talk", "that", "the", "their", "them", "there",
+        "this", "those", "to", "what", "when", "where", "which", "who", "why",
+        "would", "you", "your"
+    }
+    tokens = [
+        normalize_token(token)
+        for token in tokenize(question)
+        if token not in STOP_WORDS and len(token) > 2
+    ]
+    return [token for token in tokens if token not in generic_words and len(token) > 2]
+
+
 def answer_question(question, notes):
     if not question.strip():
         return "Please ask a question about the notes."
@@ -228,11 +246,10 @@ def answer_question(question, notes):
         return summarize_notes(notes)
 
     sentences = split_into_sentences(notes)
-    question_tokens = {
-        normalize_token(token)
-        for token in tokenize(question)
-        if token not in STOP_WORDS and len(token) > 2
-    }
+    question_keywords = _extract_question_keywords(question)
+
+    if not question_keywords:
+        return "I could not find a clear answer in the provided notes."
 
     best_sentence = "I could not find a clear answer in the provided notes."
     best_score = 0
@@ -243,10 +260,13 @@ def answer_question(question, notes):
             for token in tokenize(sentence)
             if token not in STOP_WORDS and len(token) > 2
         }
-        overlap = len(question_tokens & sentence_tokens)
+        overlap = sum(1 for keyword in question_keywords if keyword in sentence_tokens)
         if overlap > best_score:
             best_score = overlap
             best_sentence = sentence
+
+    if best_score == 0:
+        return "I could not find a clear answer in the provided notes."
 
     return best_sentence
 

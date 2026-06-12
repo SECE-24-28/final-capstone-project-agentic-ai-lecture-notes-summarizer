@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from text import summarize_notes
+from text import answer_question, summarize_notes
 from textPDF import answer_pdf_question, summarize_pdf_document
 
 
@@ -90,6 +90,18 @@ def test_summarize_notes_uses_gemini_prompt_for_academic_summary(monkeypatch):
     assert "summary" in summary.lower()
     assert "gemini-2.5-flash" in captured["url"]
     assert "main topic" in captured["payload"]["contents"][0]["parts"][0]["text"].lower()
+
+
+def test_answer_question_prefers_the_sentence_about_the_requested_topic():
+    notes = (
+        "The speaker addresses many questions about public policy. "
+        "The lecture discusses the role of art in social change."
+    )
+
+    answer = answer_question("Does it talk about art?", notes)
+
+    assert "art" in answer.lower()
+    assert "social" in answer.lower() or "change" in answer.lower()
 
 
 def test_summarize_pdf_document_uses_extracted_text(monkeypatch, tmp_path):

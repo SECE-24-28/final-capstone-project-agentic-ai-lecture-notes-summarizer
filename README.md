@@ -1,45 +1,90 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/s7J27iqd)
+# Lecture Notes Summarizer
 
+A Python-based assistant for turning lecture notes into concise, readable summaries and answering questions about the content.
 
-# Lecture Notes Summarizer (Handwritten & Text-Based)
+## What the project does
 
-## Project Overview
+This project supports three main workflows:
 
-Lecture Notes Summarizer is an Agentic AI-powered application designed to automatically generate concise and meaningful summaries from both handwritten and digital lecture notes. The system helps students save time, improve learning efficiency, and quickly review important concepts without reading lengthy notes.
+1. Manual text input
+   - Users enter lecture notes directly in the terminal.
+   - The app generates a concise summary.
+   - Users can ask questions about the notes.
 
-The application supports multiple input formats, including scanned handwritten notes, images, PDFs, and text documents. Using Optical Character Recognition (OCR), handwritten content is converted into machine-readable text. An AI-powered summarization engine then extracts key concepts, important points, definitions, and insights to generate structured summaries.
+2. PDF input
+   - Users provide a PDF file.
+   - The text is extracted from the document.
+   - A summary is generated and questions can be asked about the content.
 
-The agentic workflow enables the system to intelligently process documents, analyze content, identify important information, and produce human-readable summaries with minimal user intervention.
+3. Image input
+   - Users provide an image of handwritten notes.
+   - Gemini OCR extracts the handwritten text.
+   - The extracted notes are summarized and can be queried.
 
-## Key Features
+## Current features
 
-* Handwritten note recognition using OCR
-* Text document summarization
-* PDF, image, and text file support
-* Automatic extraction of key concepts
-* Concise and structured summary generation
-* Agentic AI workflow for autonomous document processing
-* Improved study and revision experience for students
-* Scalable architecture for future academic applications
+- Summarization of lecture notes from plain text
+- PDF text extraction and summarization
+- Handwritten note OCR from images
+- Question answering based on the extracted or entered notes
+- Academic-style summaries that focus on the main topic, key ideas, and takeaway
+- A built-in fallback summarizer when LLM access is unavailable
 
-## Problem Statement
+## Technologies used
 
-Students often spend significant time reviewing lengthy lecture notes before examinations and assignments. Manual summarization is time-consuming and may result in missing important concepts. This project aims to automate the summarization process and provide quick, accurate, and easy-to-understand study material.
+- Python 3.12+
+- Gemini API for OCR and summarization
+- PDF extraction via pypdf
+- Standard Python libraries for CLI interaction
 
-## Solution
+## Setup
 
-The system first extracts textual content from handwritten or digital lecture notes. The extracted text is then processed using Natural Language Processing (NLP) and Large Language Models (LLMs) to identify the most relevant information. Finally, the AI agent generates a concise summary that highlights key topics, concepts, and important takeaways.
+1. Clone the repository.
+2. Create and activate a Python environment.
+3. Install dependencies:
+   - `pip install -r requirements.txt`
+   - or `uv sync`
+4. Create a `.env` file in the project root with one of the following:
+   - `GEMINI_API_KEY=your_key`
+   - `GOOGLE_API_KEY=your_key`
+5. Optionally set:
+   - `LLM_PROVIDER=gemini`
 
-## Technologies Used
+## Run the project
 
-* Python
-* OCR (EasyOCR / Tesseract OCR)
-* Natural Language Processing (NLP)
-* Large Language Models (LLMs)
-* LangChain / Agentic AI Frameworks
-* Streamlit or Flask (Frontend)
-* PDF and Image Processing Libraries
+### Text notes
+```bash
+python text.py
+```
 
-## Expected Outcome
+### PDF notes
+```bash
+python textPDF.py path/to/notes.pdf
+```
 
-The project enables students to transform lengthy lecture materials into concise study notes, reducing revision time and improving knowledge retention through AI-generated summaries.
+### Image notes
+```bash
+python ocrimage.py
+```
+
+You can also run them with `uv` if preferred:
+
+```bash
+uv run text.py
+uv run textPDF.py path/to/notes.pdf
+uv run ocrimage.py
+```
+
+## Testing
+
+Run the test suite with:
+
+```bash
+pytest -q
+```
+
+## Notes
+
+- The summarization flow was improved to produce clearer, less extractive summaries.
+- If Gemini is unavailable, the project keeps using its existing fallback summarizer.
+- The core workflows for text, PDF, image, and question answering remain intact.
