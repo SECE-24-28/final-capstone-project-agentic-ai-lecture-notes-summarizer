@@ -8,13 +8,15 @@ from text import summarize_notes
 from textPDF import answer_pdf_question, summarize_pdf_document
 
 
-def test_summarize_notes_creates_a_contextual_summary():
+def test_summarize_notes_creates_a_contextual_summary(monkeypatch):
     notes = (
         "Artificial intelligence is transforming healthcare. "
         "It improves diagnosis through data analysis. "
         "It also automates routine tasks. "
         "Hospitals use it to support doctors."
     )
+
+    monkeypatch.setattr("text._get_llm_summary", lambda notes_value: None)
 
     summary = summarize_notes(notes)
 
@@ -52,6 +54,42 @@ def test_summarize_notes_uses_llm_summary_when_available(monkeypatch):
     summary = summarize_notes(notes, use_llm=True)
 
     assert "polished llm summary" in summary.lower()
+
+
+def test_summarize_notes_uses_gemini_prompt_for_academic_summary(monkeypatch):
+    notes = "Art can challenge political authority during social change."
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+
+    captured = {}
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps(self._payload).encode("utf-8")
+
+    def fake_urlopen(request, timeout=10):
+        captured["url"] = request.full_url
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse({"candidates": [{"content": {"parts": [{"text": "Main Topic: art and politics\n\nSummary: A concise academic summary."}]}}]})
+
+    monkeypatch.setattr("text.urllib_request.urlopen", fake_urlopen)
+
+    summary = summarize_notes(notes, use_llm=True)
+
+    assert "main topic" in summary.lower()
+    assert "summary" in summary.lower()
+    assert "gemini-2.5-flash" in captured["url"]
+    assert "main topic" in captured["payload"]["contents"][0]["parts"][0]["text"].lower()
 
 
 def test_summarize_pdf_document_uses_extracted_text(monkeypatch, tmp_path):

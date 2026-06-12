@@ -86,6 +86,25 @@ def _compress_sentence(sentence, max_terms=6):
     return " ".join(compressed_tokens)
 
 
+def _build_academic_summary_prompt(notes):
+    return (
+        "You are a careful academic study assistant. Write a concise academic summary of the lecture notes in clear, student-friendly language.\n"
+        "Follow these rules:\n"
+        "- Identify the main topic in one sentence.\n"
+        "- Explain the key ideas using your own words.\n"
+        "- Mention important arguments or concepts.\n"
+        "- End with a final takeaway.\n"
+        "- Avoid copying large chunks of the original text.\n"
+        "- Keep the response around 80-150 words.\n"
+        "Format the response as:\n"
+        "Main Topic:\n"
+        "<one sentence>\n\n"
+        "Summary:\n"
+        "<one paragraph>\n\n"
+        f"Lecture notes:\n{notes}"
+    )
+
+
 def _get_llm_summary(notes):
     provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
     if provider in {"openai", "gpt"}:
@@ -98,14 +117,14 @@ def _get_llm_summary(notes):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant that summarizes lecture notes clearly, concisely, and in polished prose.",
+                    "content": "You are a helpful academic assistant that summarizes lecture notes clearly, concisely, and in polished prose.",
                 },
                 {
                     "role": "user",
-                    "content": f"Summarize the following lecture notes in 2 to 3 short, polished sentences:\n\n{notes}",
+                    "content": _build_academic_summary_prompt(notes),
                 },
             ],
-            "temperature": 0.4,
+            "temperature": 0.3,
         }
         headers = {
             "Content-Type": "application/json",
@@ -115,17 +134,18 @@ def _get_llm_summary(notes):
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             return None
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         payload = {
             "contents": [
                 {
                     "parts": [
                         {
-                            "text": f"Summarize the following lecture notes in 2 to 3 short, polished sentences:\n\n{notes}",
+                            "text": _build_academic_summary_prompt(notes),
                         }
                     ]
                 }
-            ]
+            ],
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 220},
         }
         headers = {"Content-Type": "application/json"}
     else:
